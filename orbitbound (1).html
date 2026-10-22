@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbitbound — A Space Adventure</title>
+<style>
+/* Simple CSS: layout, colours and buttons. The game itself is drawn in JavaScript. */
+:root {
+  color-scheme: dark;
+  --bg: #050712;
+  --panel: #0b1225;
+  --line: #283b5b;
+  --text: #eaf3ff;
+  --soft: #a8bad6;
+  --cyan: #7cecff;
+  --purple: #a68aff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding: 18px;
+  color: var(--text);
+  background: radial-gradient(ellipse at 50% 0%, #15193a 0%, var(--bg) 58%);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { width: min(1120px, 100%); margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 12px; }
+h1 { margin: 0; font-size: clamp(25px, 4vw, 40px); letter-spacing: .09em; line-height: 1; }
+h1 span { color: var(--cyan); }
+.tagline { color: var(--soft); margin-top: 7px; font-size: 13px; }
+.hud { display: flex; flex-wrap: wrap; gap: 7px; justify-content: end; }
+.pill { border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; background: #080e1fdd; font-size: 12px; color: var(--soft); }
+.pill strong { color: var(--cyan); margin-left: 4px; }
+.track { height: 5px; background: #101a30; border-radius: 20px; margin-bottom: 10px; overflow: hidden; border: 1px solid #1a2943; }
+#progress { width: 0%; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--purple)); transition: width .08s linear; }
+.game-frame { position: relative; overflow: hidden; border: 1px solid #2c3d5d; border-radius: 15px; background: #050817; box-shadow: 0 22px 65px #0008; }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
+.hint { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: 12px 0; color: var(--soft); font-size: 12px; line-height: 1.5; }
+.keys { color: #e9f8ff; border: 1px solid #344768; background: #101a30; padding: 2px 5px; border-radius: 5px; white-space: nowrap; }
+.info-row { display: grid; grid-template-columns: 1.15fr 1fr; gap: 10px; }
+.info-card { border: 1px solid var(--line); border-radius: 12px; background: #090f20d9; padding: 13px 15px; min-height: 78px; }
+.info-label { color: #788eaf; text-transform: uppercase; letter-spacing: .12em; font-size: 10px; margin-bottom: 6px; }
+.info-title { font-size: 14px; font-weight: 750; margin-bottom: 4px; }
+.info-text { color: var(--soft); font-size: 12px; line-height: 1.5; }
+.overlay { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; padding: 18px; background: linear-gradient(120deg, #030711bb, #060a1ddd); }
+.overlay.hidden { display: none; }
+.dialog { width: min(520px, 100%); padding: clamp(18px, 4vw, 29px); border: 1px solid #40587c; border-radius: 15px; background: #070d1ff5; box-shadow: 0 20px 80px #000b; }
+.eyebrow { color: var(--cyan); font-size: 11px; text-transform: uppercase; letter-spacing: .19em; font-weight: 800; }
+.dialog h2 { font-size: clamp(23px, 4vw, 35px); line-height: 1.1; margin: 9px 0; }
+.dialog p { color: #bac8df; font-size: 13px; line-height: 1.65; margin: 10px 0; }
+.dialog .small-note { color: #8297b8; font-size: 11px; }
+button { border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 800; padding: 11px 16px; color: #07101e; background: var(--cyan); }
+button:hover { filter: brightness(1.08); }
+button:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+#mainButton { margin-top: 8px; width: 100%; }
+.touch-controls { display: none; margin: 12px auto; grid-template-columns: repeat(3, 58px); gap: 6px; justify-content: center; }
+.touch-controls button { padding: 11px 0; border: 1px solid #2f4264; background: #121e35; color: var(--text); touch-action: none; user-select: none; }
+.touch-controls button.boost { color: var(--cyan); }
+footer { color: #7285a3; font-size: 11px; line-height: 1.55; margin-top: 12px; }
+footer a { color: #9ccef4; }
+@media (max-width: 700px) {
+  body { padding: 10px; }
+  header { align-items: start; flex-direction: column; }
+  .hud { justify-content: start; }
+  .info-row { grid-template-columns: 1fr; }
+  .touch-controls { display: grid; }
+  .hint { margin-top: 8px; }
+
+  /* Phone-only: let the opening overlay scroll when its text is taller than the game. */
+  .overlay {
+    overflow-y: auto;
+    align-items: start;
+    justify-items: center;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dialog { margin-block: auto; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>ORBIT<span>BOUND</span></h1>
+      <div class="tagline">A tiny space adventure · Made as a first game project</div>
+    </div>
+    <div class="hud">
+      <div class="pill">LEVEL <strong id="levelNumber">1 / 5</strong></div>
+      <div class="pill">SHIELDS <strong id="shields">♥ ♥ ♥</strong></div>
+      <div class="pill">WARP CELLS <strong id="cells">0</strong></div>
+    </div>
+  </header>
+  <div class="track"><div id="progress"></div></div>
+  <section class="game-frame">
+    <canvas id="game" width="960" height="540" aria-label="Orbitbound space game"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="dialog">
+        <div class="eyebrow" id="overlayEyebrow">A SMALL SPACE ADVENTURE</div>
+        <h2 id="overlayTitle">Lost far from home.</h2>
+        <p id="overlayText">You are Nix, an alien pilot from the Veyra Galaxy. A damaged jump drive has stranded you in the Milky Way. Your map core says the only stable route home is to travel inward through this solar system, collect warp cells, and activate an ancient jump gate.</p>
+        <p class="small-note" id="overlayNote">Move with WASD or arrow keys. Hold Space to boost. Reach the glowing gate to finish a level. Planet sizes use one shared scale; distances are compressed for gameplay.</p>
+        <button id="mainButton">Start the journey</button>
+      </div>
+    </div>
+  </section>
+  <div class="hint">
+    <div><span class="keys">W A S D</span> / <span class="keys">↑ ↓ ← →</span> fly &nbsp; <span class="keys">SPACE</span> boost &nbsp; <span class="keys">R</span> retry level</div>
+    <div>Watch the gravity, dodge moons and rocks, and follow the cyan gate.</div>
+  </div>
+  <div class="info-row">
+    <div class="info-card">
+      <div class="info-label">Mission brief</div>
+      <div class="info-title" id="missionTitle">Level 1 — The Blue Frontier</div>
+      <div class="info-text" id="missionText">Get past Neptune and Uranus. Their icy atmosphere effects make steering harder.</div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">Navigation scan</div>
+      <div class="info-title" id="scanTitle">No planet scanned</div>
+      <div class="info-text" id="scanText">Move close to a planet or moon to read the scan.</div>
+    </div>
+  </div>
+  <div class="touch-controls" aria-label="Touch controls">
+    <span></span><button data-key="ArrowUp">▲</button><span></span>
+    <button data-key="ArrowLeft">◀</button><button class="boost" data-key=" ">BOOST</button><button data-key="ArrowRight">▶</button>
+    <span></span><button data-key="ArrowDown">▼</button><span></span>
+  </div>
+  <footer>
+    Planet disk sizes use a shared scale based on NASA's planetary fact sheet (equatorial diameters). Real planet-to-planet distances are far too large for a short game, so distances are shortened. Moon markers and asteroid hitboxes are slightly enlarged so the hazards can be seen and avoided.<br>
+    Size reference: <a href="https://science.nasa.gov/solar-system/planet-sizes-and-locations/" target="_blank" rel="noreferrer">NASA — Planet Sizes and Locations</a>. Veyra is a fictional home galaxy; this is science-fiction gameplay, not a literal spaceflight simulator.
+  </footer>
+</main>
+<script>
+// ORBITBOUND: the JavaScript controls movement, planet gravity and drawing.
+// I kept the game in one file so it is easy to open and change in VS Code.
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width;
+const H = canvas.height;
+
+const levelNumber = document.getElementById("levelNumber");
+const shieldsText = document.getElementById("shields");
+const cellsText = document.getElementById("cells");
+const progressBar = document.getElementById("progress");
+const missionTitle = document.getElementById("missionTitle");
+const missionText = document.getElementById("missionText");
+const scanTitle = document.getElementById("scanTitle");
+const scanText = document.getElementById("scanText");
+const overlay = document.getElementById("overlay");
+const overlayEyebrow = document.getElementById("overlayEyebrow");
+const overlayTitle = document.getElementById("overlayTitle");
+const overlayText = document.getElementById("overlayText");
+const overlayNote = document.getElementById("overlayNote");
+const mainButton = document.getElementById("mainButton");
+
+// Planet diameters in kilometres, from NASA's planetary fact sheet.
+// One kilometre is not one pixel: the shared drawing scale is 0.00084 px per km.
+// This keeps Jupiter much bigger than Earth, and Uranus a bit bigger than Neptune.
+const planetInfo = {
+  Mercury: { diameter: 4879, color: "#b7a28b", fact: "Mercury is the smallest planet. It has almost no atmosphere to soften temperature changes." },
+  Venus:   { diameter: 12104, color: "#d8ad73", fact: "Venus has a very thick atmosphere and an extremely hot surface." },
+  Earth:   { diameter: 12756, color: "#4d9ef0", fact: "Earth is our home planet. Its Moon is a much smaller companion, shown as a tiny marker." },
+  Mars:    { diameter: 6792, color: "#c66c4a", fact: "Mars is about half Earth's diameter. The small size here follows the same planet scale." },
+  Jupiter: { diameter: 142984, color: "#c8a17a", fact: "Jupiter is the biggest planet. Its powerful gravity bends your path; its four major moons make a busy flight lane." },
+  Saturn:  { diameter: 120536, color: "#d8c28e", fact: "Saturn is the second-largest planet. Its rings are made mostly of countless pieces of ice and rock." },
+  Uranus:  { diameter: 51118, color: "#8ad9e0", fact: "Uranus is the third-largest planet and an ice giant. Its atmosphere and extreme sideways tilt inspire the drifting ice zones in this game." },
+  Neptune: { diameter: 49528, color: "#477ce8", fact: "Neptune is an ice giant with powerful winds. The game turns that into gusts that push your ship off course." }
+};
+
+// Radius is calculated from real diameter, so every planet uses the same scale.
+function planetRadius(name) {
+  return (planetInfo[name].diameter / 2) * 0.00084;
+}
+
+// Every level gives a start, a goal, a few planets and the special hazards.
+// X distances are deliberately shortened. Planet sizes are NOT independently guessed.
+const levelData = [
+  {
+    title: "The Blue Frontier",
+    route: "Neptune → Uranus → Saturn",
+    story: "Level 1: Fly from Neptune to Saturn. Neptune's storm gusts and Uranus's drifting ice fields can push the ship around. Saturn's rings and moons guard the exit.",
+    effect: "ICE GIANTS: gusts and slippery steering",
+    width: 2800,
+    planets: [
+      { name: "Neptune", x: 480, y: 330, gravity: 1200000, effect: "neptune" },
+      { name: "Uranus", x: 1260, y: 200, gravity: 1500000, effect: "uranus" },
+      { name: "Saturn", x: 2210, y: 330, gravity: 1700000, effect: "saturn" }
+    ],
+    moons: [
+      { name: "Triton", parent: "Neptune", diameter: 2707, orbit: 67, phase: 0.7, speed: 0.36 },
+      { name: "Titania", parent: "Uranus", diameter: 1578, orbit: 65, phase: 1.4, speed: 0.42 },
+      { name: "Oberon", parent: "Uranus", diameter: 1523, orbit: 89, phase: 2.8, speed: -0.29 },
+      { name: "Ariel", parent: "Uranus", diameter: 1158, orbit: 48, phase: 3.8, speed: 0.53 },
+      { name: "Umbriel", parent: "Uranus", diameter: 1169, orbit: 76, phase: 0.3, speed: -0.35 },
+      { name: "Miranda", parent: "Uranus", diameter: 472, orbit: 34, phase: 4.3, speed: 0.61 },
+      { name: "Titan", parent: "Saturn", diameter: 5150, orbit: 115, phase: 0.2, speed: 0.27 },
+      { name: "Rhea", parent: "Saturn", diameter: 1528, orbit: 150, phase: 2.5, speed: -0.22 },
+      { name: "Enceladus", parent: "Saturn", diameter: 504, orbit: 75, phase: 4.1, speed: 0.48 },
+      { name: "Dione", parent: "Saturn", diameter: 1123, orbit: 96, phase: 5.3, speed: -0.39 },
+      { name: "Mimas", parent: "Saturn", diameter: 396, orbit: 55, phase: 3.2, speed: 0.57 }
+    ],
+    asteroidZones: [],
+    cells: [{ x: 800, y: 120 }, { x: 1640, y: 420 }, { x: 2480, y: 150 }]
+  },
+  {
+    title: "The Ring Road",
+    route: "Saturn → Jupiter",
+    story: "Level 2: Start at the sixth planet and head toward the asteroid belt. This is the first half of that route: Saturn's moon lanes lead to Jupiter, where the gravity gets much stronger.",
+    effect: "SATURN'S RINGS + JUPITER'S GRAVITY",
+    width: 2700,
+    planets: [
+      { name: "Saturn", x: 420, y: 365, gravity: 1700000, effect: "saturn" },
+      { name: "Jupiter", x: 2020, y: 300, gravity: 2600000, effect: "jupiter" }
+    ],
+    moons: [
+      { name: "Titan", parent: "Saturn", diameter: 5150, orbit: 115, phase: 1.1, speed: 0.31 },
+      { name: "Rhea", parent: "Saturn", diameter: 1528, orbit: 150, phase: 2.6, speed: -0.25 },
+      { name: "Enceladus", parent: "Saturn", diameter: 504, orbit: 75, phase: 4.3, speed: 0.46 },
+      { name: "Dione", parent: "Saturn", diameter: 1123, orbit: 94, phase: 5.5, speed: -0.35 },
+      { name: "Ganymede", parent: "Jupiter", diameter: 5268, orbit: 135, phase: 0.5, speed: 0.22 },
+      { name: "Callisto", parent: "Jupiter", diameter: 4821, orbit: 170, phase: 2.5, speed: -0.18 },
+      { name: "Io", parent: "Jupiter", diameter: 3643, orbit: 82, phase: 4.3, speed: 0.35 },
+      { name: "Europa", parent: "Jupiter", diameter: 3122, orbit: 105, phase: 5.2, speed: -0.29 }
+    ],
+    asteroidZones: [],
+    cells: [{ x: 900, y: 125 }, { x: 1530, y: 440 }, { x: 2390, y: 125 }]
+  },
+  {
+    title: "The Asteroid Run",
+    route: "Jupiter → Asteroid Belt",
+    story: "Level 3: Make the Jupiter-to-belt run. Keep away from the giant planet's gravity and weave through the asteroid belt. The belt is spread out in real life, but the game packs rocks closer so you can actually play it.",
+    effect: "STRONG GRAVITY + MOVING ROCKS",
+    width: 2750,
+    planets: [
+      { name: "Jupiter", x: 360, y: 320, gravity: 2700000, effect: "jupiter" }
+    ],
+    moons: [
+      { name: "Ganymede", parent: "Jupiter", diameter: 5268, orbit: 135, phase: 0.2, speed: 0.23 },
+      { name: "Callisto", parent: "Jupiter", diameter: 4821, orbit: 170, phase: 2.3, speed: -0.19 },
+      { name: "Io", parent: "Jupiter", diameter: 3643, orbit: 85, phase: 4.5, speed: 0.36 },
+      { name: "Europa", parent: "Jupiter", diameter: 3122, orbit: 105, phase: 5.2, speed: -0.31 }
+    ],
+    asteroidZones: [{ start: 850, end: 2310, count: 58, yMin: 38, yMax: 502 }],
+    cells: [{ x: 760, y: 100 }, { x: 1410, y: 425 }, { x: 1980, y: 110 }, { x: 2440, y: 390 }]
+  },
+  {
+    title: "The Sunward Gate",
+    route: "Asteroid Belt → Inner Solar System",
+    story: "Level 4: The route heads inward past Mars, Earth, Venus and Mercury. Their disks are tiny next to the giant planets because they really are much smaller. A hidden jump gate sits at the edge of the Sun's enormous disk.",
+    effect: "ASTEROID FIELD + SOLAR FLARE ZONE",
+    width: 1980,
+    planets: [
+      { name: "Mars", x: 1060, y: 350, gravity: 300000, effect: "small" },
+      { name: "Earth", x: 1290, y: 170, gravity: 360000, effect: "small" },
+      { name: "Venus", x: 1510, y: 365, gravity: 360000, effect: "small" },
+      { name: "Mercury", x: 1690, y: 220, gravity: 220000, effect: "small" },
+      // The Sun is drawn using the same size scale, but is scenery and not a solid obstacle.
+      { name: "Sun", x: 2500, y: 270, diameter: 1392700, color: "#ffb94f", gravity: 0, effect: "sun", scenery: true }
+    ],
+    moons: [
+      { name: "Phobos", parent: "Mars", diameter: 22, orbit: 33, phase: 0.8, speed: 0.7 },
+      { name: "Deimos", parent: "Mars", diameter: 12, orbit: 43, phase: 3.2, speed: -0.52 },
+      { name: "Moon", parent: "Earth", diameter: 3475, orbit: 46, phase: 2.4, speed: 0.43 }
+    ],
+    asteroidZones: [{ start: 100, end: 940, count: 38, yMin: 35, yMax: 505 }],
+    cells: [{ x: 590, y: 130 }, { x: 970, y: 430 }, { x: 1450, y: 90 }, { x: 1790, y: 465 }]
+  },
+  {
+    title: "Beyond the Milky Way",
+    route: "Milky Way → Veyra Galaxy",
+    story: "Level 5: The jump gate throws Nix out past the Milky Way. Fly through the quiet intergalactic dark and reach Veyra, the home galaxy. The story ends here for now…",
+    effect: "DEEP SPACE: NAVIGATE THE WARP RIFT",
+    width: 3100,
+    planets: [],
+    moons: [],
+    asteroidZones: [{ start: 720, end: 2120, count: 17, yMin: 55, yMax: 490 }],
+    cells: [{ x: 560, y: 140 }, { x: 1190, y: 425 }, { x: 1810, y: 120 }, { x: 2200, y: 395 }]
+  }
+];
+
+let levelIndex = 0;
+let stage;
+let ship;
+let keys = new Set();
+let stars = [];
+let asteroids = [];
+let moons = [];
+let cells = [];
+let running = false;
+let loopVersion = 0;
+let lastTime = 0;
+let cameraX = 0;
+let shields = 3;
+let hitCooldown = 0;
+let invincible = 0;
+let cellCount = 0;
+let totalCells = 0;
+let buttonAction = "start";
+let toastMessage = "";
+let toastTime = 0;
+let time = 0;
+
+function getRadius(planet) {
+  const diameter = planet.diameter || planetInfo[planet.name].diameter;
+  return diameter * 0.00042;
+}
+
+function makeStage() {
+  stage = levelData[levelIndex];
+  const newPlanets = stage.planets.map(p => ({ ...p, r: getRadius(p) }));
+  stage.playPlanets = newPlanets;
+  ship = { x: 90, y: 265, vx: 0, vy: 0, r: 8, angle: 0, boost: false };
+  shields = 3;
+  hitCooldown = 0;
+  invincible = 0;
+  cameraX = 0;
+  cellCount = 0;
+  cells = stage.cells.map(c => ({ ...c, got: false }));
+  moons = stage.moons.map(m => {
+    const parent = newPlanets.find(p => p.name === m.parent);
+    return { ...m, parent, angle: m.phase, r: (m.diameter / 2) * 0.00084,
+      x: parent.x + Math.cos(m.phase) * m.orbit,
+      y: parent.y + Math.sin(m.phase) * m.orbit * 0.58 };
+  });
+  asteroids = [];
+  // A simple repeatable pattern keeps rocks spread through each danger zone.
+  for (const zone of stage.asteroidZones) {
+    for (let i = 0; i < zone.count; i++) {
+      const part = (i + 0.5) / zone.count;
+      const x = zone.start + part * (zone.end - zone.start);
+      const yRange = zone.yMax - zone.yMin;
+      const y = zone.yMin + ((i * 137 + levelIndex * 53 + 71) % yRange);
+      const r = 3 + ((i * 7 + levelIndex * 3) % 8);
+      asteroids.push({ x, y, r, spin: (i % 2 ? 1 : -1) * (0.2 + (i % 4) * 0.09), angle: i * 0.71 });
+    }
+  }
+  stars = [];
+  for (let i = 0; i < 180; i++) {
+    stars.push({ x: Math.random() * (stage.width + W), y: Math.random() * H,
+      r: Math.random() * 1.5 + 0.25, layer: 0.15 + Math.random() * 0.65,
+      blink: Math.random() * 6.28 });
+  }
+  missionTitle.textContent = `Level ${levelIndex + 1} — ${stage.title}`;
+  missionText.textContent = stage.story;
+  levelNumber.textContent = `${levelIndex + 1} / ${levelData.length}`;
+  updateHud();
+  scanTitle.textContent = "No planet scanned";
+  scanText.textContent = stage.effect;
+  progressBar.style.width = "0%";
+}
+
+function updateHud() {
+  shieldsText.textContent = "♥ ".repeat(shields).trim() || "0";
+  cellsText.textContent = String(totalCells);
+}
+
+function showOverlay(eyebrow, title, text, note, buttonText, action) {
+  running = false;
+  loopVersion++;
+  buttonAction = action;
+  overlayEyebrow.textContent = eyebrow;
+  overlayTitle.textContent = title;
+  overlayText.textContent = text;
+  overlayNote.textContent = note;
+  mainButton.textContent = buttonText;
+  overlay.classList.remove("hidden");
+}
+
+function startLevel() {
+  // A new version number stops any older animation loop after a restart.
+  loopVersion++;
+  const thisLoop = loopVersion;
+  running = false;
+  makeStage();
+  overlay.classList.add("hidden");
+  running = true;
+  lastTime = performance.now();
+  requestAnimationFrame(now => gameLoop(now, thisLoop));
+}
+
+function retryLevel() {
+  startLevel();
+}
+
+function startNextLevel() {
+  levelIndex++;
+  if (levelIndex >= levelData.length) {
+    levelIndex = 0;
+    totalCells = 0;
+    showOverlay("A SMALL SPACE ADVENTURE", "Lost far from home.",
+      "You are Nix, an alien pilot from the Veyra Galaxy. A damaged jump drive has stranded you in the Milky Way. Collect warp cells, survive the planetary hazards, and find the jump gate back home.",
+      "Planet disks share one size scale. Space distances are compressed for gameplay.", "Start the journey", "start");
+    makeStage();
+    return;
+  }
+  startLevel();
+}
+
+function showToast(message) {
+  toastMessage = message;
+  toastTime = 2.1;
+}
+
+function damageShip(message) {
+  if (invincible > 0 || !running) return;
+  shields--;
+  updateHud();
+  if (shields <= 0) {
+    showOverlay("SHIP SYSTEMS FAILED", "Your ship took too much damage.",
+      `You lost your three shields in ${stage.title}. Learn where the hazards are, then try the level again.`,
+      "Tip: use short bursts and steer above or below large planets.", "Retry level", "retry");
+    return;
+  }
+  ship.x = 90;
+  ship.y = 265;
+  ship.vx = 0;
+  ship.vy = 0;
+  invincible = 1.7;
+  hitCooldown = 1.1;
+  showToast(message + `  Shields left: ${shields}`);
+}
+
+function finishLevel() {
+  if (!running) return;
+  if (levelIndex === levelData.length - 1) {
+    totalCells += cellCount;
+    updateHud();
+    showOverlay("TRANSMISSION RECEIVED", "TO BE CONTINUED…",
+      "Nix reaches the Veyra Galaxy at last. The familiar star patterns return on the navigation screen, and a voice from home answers the ship. But something else is following the signal…",
+      "End of Chapter One. Thanks for playing Orbitbound.", "Play from the beginning", "replay");
+    return;
+  }
+  totalCells += cellCount;
+  updateHud();
+  showOverlay(`LEVEL ${levelIndex + 1} COMPLETE`, stage.title + " cleared!",
+    `You made it through ${stage.route}. ${stage.story} Get ready for the next part of Nix's route home.`,
+    "Warp cells are bonus collectibles; you do not need every one to finish a level.", "Next level", "next");
+}
+
+function handleButton() {
+  if (buttonAction === "start") {
+    levelIndex = 0;
+    totalCells = 0;
+    startLevel();
+  } else if (buttonAction === "retry") {
+    // The current level restarts with three shields.
+    startLevel();
+  } else if (buttonAction === "next") {
+    startNextLevel();
+  } else if (buttonAction === "replay") {
+    levelIndex = 0;
+    totalCells = 0;
+    startLevel();
+  }
+}
+mainButton.addEventListener("click", handleButton);
+
+function planetFact(planet) {
+  if (planet.name === "Sun") {
+    return { title: "Sun · star", text: "The Sun is so large that this disk uses the same scale as the planets. It is scenery here, not a landing surface." };
+  }
+  return planetInfo[planet.name];
+}
+
+function update(dt) {
+  time += dt;
+  if (hitCooldown > 0) hitCooldown -= dt;
+  if (invincible > 0) invincible -= dt;
+  if (toastTime > 0) toastTime -= dt;
+
+  // The player chooses a direction. Normal movement accelerates the ship.
+  let ax = 0;
+  let ay = 0;
+  if (keys.has("ArrowUp") || keys.has("w") || keys.has("W")) ay -= 1;
+  if (keys.has("ArrowDown") || keys.has("s") || keys.has("S")) ay += 1;
+  if (keys.has("ArrowLeft") || keys.has("a") || keys.has("A")) ax -= 1;
+  if (keys.has("ArrowRight") || keys.has("d") || keys.has("D")) ax += 1;
+  const directionLength = Math.hypot(ax, ay) || 1;
+  ax /= directionLength;
+  ay /= directionLength;
+
+  ship.boost = keys.has(" ");
+  let acceleration = ship.boost ? 350 : 210;
+  let activeEffect = stage.effect;
+  let closestPlanet = null;
+  let closestDistance = Infinity;
+
+  // Planet gravity is a game effect. We use gentle values so controls still feel fair.
+  for (const planet of stage.playPlanets) {
+    const dx = planet.x - ship.x;
+    const dy = planet.y - ship.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestPlanet = planet;
+    }
+    if (!planet.scenery && planet.gravity > 0 && distance < planet.r + 240) {
+      const strength = planet.gravity / (distance * distance + 4200);
+      ship.vx += (dx / distance) * strength * dt;
+      ship.vy += (dy / distance) * strength * dt;
+    }
+    if (planet.effect === "neptune" && distance < 220) {
+      // Neptune's strong winds become changing gusts in the game.
+      ship.vx += Math.sin(time * 3.4 + ship.y * 0.02) * 28 * dt;
+      ship.vy += Math.cos(time * 2.8 + ship.x * 0.015) * 62 * dt;
+      activeEffect = "NEPTUNE: storm gusts are pushing the ship";
+    }
+    if (planet.effect === "uranus" && distance < 190) {
+      // Lower acceleration and more inertia makes steering feel slippery near Uranus.
+      acceleration *= 0.70;
+      activeEffect = "URANUS: icy drift makes turning harder";
+    }
+    if (planet.effect === "jupiter" && distance < 290) {
+      activeEffect = "JUPITER: strong gravity is bending your path";
+    }
+    if (planet.effect === "saturn" && distance < 190) {
+      activeEffect = "SATURN: keep clear of the rings and moon lanes";
+    }
+    // The Sun is drawn at the correct relative size but cannot be crashed into.
+    if (!planet.scenery && distance < planet.r + ship.r + 2) {
+      damageShip(`You got too close to ${planet.name}.`);
+      if (!running) return;
+    }
+  }
+
+  ship.vx += ax * acceleration * dt;
+  ship.vy += ay * acceleration * dt;
+  // Gentle drag helps stop a ship that the player is no longer steering.
+  const drag = stage.playPlanets.some(p => p.effect === "uranus" && Math.hypot(p.x - ship.x, p.y - ship.y) < 190) ? 0.996 : 0.985;
+  ship.vx *= Math.pow(drag, dt * 60);
+  ship.vy *= Math.pow(drag, dt * 60);
+
+  const speed = Math.hypot(ship.vx, ship.vy);
+  const maxSpeed = ship.boost ? 300 : 215;
+  if (speed > maxSpeed) {
+    ship.vx = ship.vx / speed * maxSpeed;
+    ship.vy = ship.vy / speed * maxSpeed;
+  }
+  ship.x += ship.vx * dt;
+  ship.y += ship.vy * dt;
+  ship.x = Math.max(8, Math.min(stage.width - 20, ship.x));
+  ship.y = Math.max(20, Math.min(H - 20, ship.y));
+  if (Math.hypot(ship.vx, ship.vy) > 5) ship.angle = Math.atan2(ship.vy, ship.vx);
+
+  // Moons orbit their parent planet. Their labels appear when you get close.
+  for (const moon of moons) {
+    moon.angle += moon.speed * dt;
+    moon.x = moon.parent.x + Math.cos(moon.angle) * moon.orbit;
+    moon.y = moon.parent.y + Math.sin(moon.angle) * moon.orbit * 0.58;
+    if (Math.hypot(ship.x - moon.x, ship.y - moon.y) < Math.max(12, moon.r + ship.r + 4)) {
+      damageShip(`Watch out for ${moon.name}!`);
+      if (!running) return;
+    }
+  }
+
+  for (const rock of asteroids) {
+    rock.angle += rock.spin * dt;
+    if (Math.hypot(ship.x - rock.x, ship.y - rock.y) < rock.r + ship.r + 2) {
+      damageShip("Asteroid impact!");
+      if (!running) return;
+    }
+  }
+
+  for (const cell of cells) {
+    if (!cell.got && Math.hypot(ship.x - cell.x, ship.y - cell.y) < 25) {
+      cell.got = true;
+      cellCount++;
+      cellsText.textContent = String(totalCells + cellCount);
+      showToast("Warp cell collected!");
+    }
+  }
+
+  if (closestPlanet && closestDistance < 260) {
+    const info = planetFact(closestPlanet);
+    scanTitle.textContent = `${closestPlanet.name} · ${closestPlanet.diameter || planetInfo[closestPlanet.name].diameter || 1392700} km wide`;
+    scanText.textContent = info.fact || info.text;
+  } else {
+    scanTitle.textContent = "Route effect";
+    scanText.textContent = activeEffect;
+  }
+
+  const percent = Math.max(0, Math.min(100, (ship.x / (stage.width - 80)) * 100));
+  progressBar.style.width = percent + "%";
+  cameraX = Math.max(0, Math.min(stage.width - W, ship.x - W * 0.32));
+
+  // Finish only when the ship actually enters the visible portal ellipse.
+  // Reaching the far edge of the level is not enough.
+  const portalX = stage.width - 80;
+  const portalY = 270;
+  const portalRadiusX = 28 + ship.r;
+  const portalRadiusY = 45 + ship.r;
+  const portalDx = (ship.x - portalX) / portalRadiusX;
+  const portalDy = (ship.y - portalY) / portalRadiusY;
+  if (portalDx * portalDx + portalDy * portalDy <= 1) finishLevel();
+}
+
+function drawBackground() {
+  const gradient = ctx.createLinearGradient(0, 0, W, H);
+  gradient.addColorStop(0, "#09112a");
+  gradient.addColorStop(0.55, "#060a1a");
+  gradient.addColorStop(1, "#030510");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars move at different speeds to make the camera feel like it is travelling.
+  for (const star of stars) {
+    const sx = ((star.x - cameraX * star.layer) % (W + 30) + W + 30) % (W + 30);
+    ctx.globalAlpha = 0.35 + 0.45 * (0.5 + 0.5 * Math.sin(time * 1.4 + star.blink));
+    ctx.fillStyle = "#e2f2ff";
+    ctx.beginPath();
+    ctx.arc(sx, star.y, star.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (levelIndex === 4) {
+    // A hazy band behind the ship represents the Milky Way as Nix leaves it.
+    const haze = ctx.createLinearGradient(0, 70, W, 430);
+    haze.addColorStop(0, "rgba(57,48,130,0)");
+    haze.addColorStop(0.5, "rgba(70,74,180,0.16)");
+    haze.addColorStop(1, "rgba(36,154,185,0)");
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function drawPlanet(planet) {
+  const sx = planet.x - cameraX;
+  if (sx < -700 || sx > W + 700) return;
+  const r = planet.r;
+
+  // Very faint glow does not change the physical disk size.
+  const glow = ctx.createRadialGradient(sx, planet.y, Math.max(1, r * 0.5), sx, planet.y, Math.max(12, r * 2.5));
+  const glowColour = planet.color || planetInfo[planet.name].color;
+  glow.addColorStop(0, glowColour + "38");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(sx, planet.y, Math.max(12, r * 2.5), 0, Math.PI * 2); ctx.fill();
+
+  if (planet.name === "Saturn") {
+    ctx.save(); ctx.translate(sx, planet.y); ctx.rotate(-0.17);
+    ctx.strokeStyle = "rgba(230,215,177,.82)"; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.65, Math.max(3, r * 0.52), 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = "rgba(130,119,104,.65)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.3, Math.max(2, r * 0.40), 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  if (planet.name === "Sun") {
+    const sunGlow = ctx.createRadialGradient(sx, planet.y, r * 0.25, sx, planet.y, r * 1.12);
+    sunGlow.addColorStop(0, "#fff2a8"); sunGlow.addColorStop(0.7, "#ffb344"); sunGlow.addColorStop(1, "rgba(255,123,45,0)");
+    ctx.fillStyle = sunGlow; ctx.beginPath(); ctx.arc(sx, planet.y, r * 1.12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#ffcf72"; ctx.beginPath(); ctx.arc(sx, planet.y, r, 0, Math.PI * 2); ctx.fill();
+  } else {
+    const colour = planetInfo[planet.name].color;
+    const shade = ctx.createRadialGradient(sx - r * 0.35, planet.y - r * 0.35, Math.max(1, r * 0.04), sx, planet.y, Math.max(1, r));
+    shade.addColorStop(0, "#ffffffaa"); shade.addColorStop(0.22, colour); shade.addColorStop(1, "#050817");
+    ctx.fillStyle = shade;
+    ctx.beginPath(); ctx.arc(sx, planet.y, Math.max(1.5, r), 0, Math.PI * 2); ctx.fill();
+    if (planet.name === "Jupiter" && r > 20) {
+      ctx.save(); ctx.beginPath(); ctx.arc(sx, planet.y, r, 0, Math.PI * 2); ctx.clip();
+      ctx.strokeStyle = "#714b3966"; ctx.lineWidth = Math.max(2, r * 0.12);
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath(); ctx.ellipse(sx, planet.y + i * r * 0.27, r * 0.95, r * 0.10, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (planet.name === "Uranus" || planet.name === "Neptune") {
+      ctx.save(); ctx.beginPath(); ctx.arc(sx, planet.y, Math.max(1.5, r), 0, Math.PI * 2); ctx.clip();
+      ctx.strokeStyle = "#c5f8ff55"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(sx, planet.y, r * 0.95, r * 0.32, 0.3, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Labels are outside the disk, so small planets still look small.
+  ctx.textAlign = "center";
+  ctx.font = "bold 11px system-ui";
+  ctx.fillStyle = "#dceaff";
+  ctx.fillText(planet.name.toUpperCase(), sx, planet.y - Math.max(10, r) - 13);
+  if (r > 18 && planet.name !== "Sun") {
+    ctx.font = "10px system-ui"; ctx.fillStyle = "#91a8ca";
+    ctx.fillText(planetInfo[planet.name].diameter.toLocaleString("en-US") + " km", sx, planet.y + r + 15);
+  }
+}
+
+function drawMoon(moon) {
+  const sx = moon.x - cameraX;
+  if (sx < -30 || sx > W + 30) return;
+  // The moon's body follows the same physical scale, but the little ring makes it findable.
+  ctx.strokeStyle = "rgba(183,222,255,.24)";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(sx, moon.y, Math.max(6, moon.r + 3), 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "#c7d7e8";
+  ctx.beginPath(); ctx.arc(sx, moon.y, Math.max(1.5, moon.r), 0, Math.PI * 2); ctx.fill();
+  if (Math.abs(ship.x - moon.x) < 145) {
+    ctx.font = "10px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = "#bacce5";
+    ctx.fillText(moon.name, sx, moon.y - 10);
+  }
+}
+
+function drawAsteroid(rock) {
+  const sx = rock.x - cameraX;
+  if (sx < -30 || sx > W + 30) return;
+  ctx.save(); ctx.translate(sx, rock.y); ctx.rotate(rock.angle);
+  ctx.fillStyle = "#768398"; ctx.strokeStyle = "#b2c0d3"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < 7; i++) {
+    const a = i * Math.PI * 2 / 7;
+    const rr = rock.r * (i % 2 === 0 ? 1 : 0.72);
+    if (i === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawCell(cell) {
+  if (cell.got) return;
+  const sx = cell.x - cameraX;
+  if (sx < -20 || sx > W + 20) return;
+  ctx.save(); ctx.translate(sx, cell.y + Math.sin(time * 3 + cell.x) * 4); ctx.rotate(time * 0.7);
+  ctx.shadowBlur = 17; ctx.shadowColor = "#70edff"; ctx.fillStyle = "#9af7ff";
+  ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 0); ctx.lineTo(0, 9); ctx.lineTo(-6, 0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawGalaxy(x, y, colour, title, scale) {
+  const sx = x - cameraX;
+  ctx.save(); ctx.translate(sx, y); ctx.scale(scale, scale); ctx.rotate(-0.35);
+  const halo = ctx.createRadialGradient(0, 0, 5, 0, 0, 150);
+  halo.addColorStop(0, colour + "66"); halo.addColorStop(1, colour + "00");
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, 150, 0, Math.PI * 2); ctx.fill();
+  for (let arm = 0; arm < 3; arm++) {
+    ctx.strokeStyle = colour + "aa"; ctx.lineWidth = 7;
+    ctx.beginPath();
+    for (let i = 0; i < 90; i++) {
+      const t = i / 89 * 5.3 + arm * Math.PI * 2 / 3;
+      const radius = 4 + i * 1.32;
+      const px = Math.cos(t) * radius;
+      const py = Math.sin(t) * radius * 0.55;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#effaff"; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.textAlign = "center"; ctx.font = "bold 12px system-ui"; ctx.fillStyle = "#dce7ff";
+  ctx.fillText(title, sx, y + 105 * scale);
+}
+
+function drawGoal() {
+  const x = stage.width - 80 - cameraX;
+  const y = 270;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(time * 0.35);
+  ctx.strokeStyle = "#75f0ff"; ctx.lineWidth = 3; ctx.shadowBlur = 20; ctx.shadowColor = "#4be4ff";
+  ctx.beginPath(); ctx.ellipse(0, 0, 28, 45, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 0, 17, 34, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  ctx.textAlign = "center"; ctx.font = "bold 10px system-ui"; ctx.fillStyle = "#9bf5ff";
+  ctx.fillText(levelIndex === 4 ? "HOME GALAXY" : "WARP GATE", x, y - 60);
+}
+
+function drawShip() {
+  const sx = ship.x - cameraX;
+  if (invincible > 0 && Math.floor(time * 12) % 2 === 0) return;
+  ctx.save(); ctx.translate(sx, ship.y); ctx.rotate(ship.angle);
+  if (ship.boost) {
+    ctx.fillStyle = "#ffad55"; ctx.beginPath(); ctx.moveTo(-8, -4); ctx.lineTo(-22, 0); ctx.lineTo(-8, 4); ctx.fill();
+    ctx.fillStyle = "#9af4ff"; ctx.beginPath(); ctx.moveTo(-8, -2); ctx.lineTo(-16, 0); ctx.lineTo(-8, 2); ctx.fill();
+  }
+  ctx.shadowBlur = 15; ctx.shadowColor = "#72eaff"; ctx.fillStyle = "#ecf9ff";
+  ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-8, -8); ctx.lineTo(-4, 0); ctx.lineTo(-8, 8); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0; ctx.fillStyle = "#3ccfe7"; ctx.beginPath(); ctx.arc(1, 0, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function draw() {
+  drawBackground();
+  ctx.save();
+  // World objects are drawn relative to the camera so the ship can travel through a wider map.
+  for (const planet of stage.playPlanets) drawPlanet(planet);
+  for (const moon of moons) drawMoon(moon);
+  for (const rock of asteroids) drawAsteroid(rock);
+  for (const cell of cells) drawCell(cell);
+  if (levelIndex === 4) {
+    drawGalaxy(850, 230, "#8177ff", "MILKY WAY", 0.62);
+    drawGalaxy(2670, 270, "#4be0d0", "VEYRA GALAXY", 0.75);
+  }
+  drawGoal();
+  drawShip();
+  ctx.restore();
+
+  if (toastTime > 0) {
+    ctx.globalAlpha = Math.min(1, toastTime);
+    ctx.fillStyle = "#071426eF"; ctx.strokeStyle = "#3c7289"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(W / 2 - 155, 16, 310, 34, 14); ctx.fill(); ctx.stroke();
+    ctx.textAlign = "center"; ctx.font = "bold 12px system-ui"; ctx.fillStyle = "#aaf5ff";
+    ctx.fillText(toastMessage, W / 2, 38); ctx.globalAlpha = 1;
+  }
+}
+
+function gameLoop(now, thisLoop) {
+  if (!running || thisLoop !== loopVersion) return;
+  const dt = Math.min((now - lastTime) / 1000, 0.035);
+  lastTime = now;
+  update(dt);
+  draw();
+  if (running && thisLoop === loopVersion) requestAnimationFrame(nowAgain => gameLoop(nowAgain, thisLoop));
+}
+
+window.addEventListener("keydown", event => {
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(event.key)) event.preventDefault();
+  keys.add(event.key);
+  if ((event.key === "r" || event.key === "R") && running) startLevel();
+  else if ((event.key === "r" || event.key === "R") && !running) {
+    if (buttonAction === "retry") startLevel();
+  }
+});
+window.addEventListener("keyup", event => keys.delete(event.key));
+window.addEventListener("blur", () => keys.clear());
+
+// These buttons also let you test the game on a touch screen.
+document.querySelectorAll(".touch-controls button").forEach(button => {
+  const key = button.dataset.key;
+  button.addEventListener("pointerdown", event => { event.preventDefault(); keys.add(key); });
+  button.addEventListener("pointerup", event => { event.preventDefault(); keys.delete(key); });
+  button.addEventListener("pointerleave", event => { event.preventDefault(); keys.delete(key); });
+  button.addEventListener("pointercancel", event => { event.preventDefault(); keys.delete(key); });
+});
+
+// Draw a still image behind the opening story screen.
+makeStage();
+draw();
+</script>
+</body>
+</html>
