@@ -77,6 +77,11 @@ footer a { color: #9ccef4; }
   }
   .dialog { margin-block: auto; }
 }
+.difficulty-label { display:block; margin:14px 0 6px; color:#8fa7c9; font-size:10px; font-weight:800; letter-spacing:.14em; }
+#difficulty { width:100%; padding:11px 12px; border:1px solid #344768; border-radius:8px; background:#101a30; color:var(--text); font:inherit; font-size:13px; margin-bottom:4px; }
+#difficulty:focus-visible { outline:3px solid white; outline-offset:3px; }
+.pill strong { font-variant-numeric:tabular-nums; }
+
 </style>
 </head>
 <body>
@@ -90,6 +95,8 @@ footer a { color: #9ccef4; }
       <div class="pill">LEVEL <strong id="levelNumber">1 / 5</strong></div>
       <div class="pill">SHIELDS <strong id="shields">♥ ♥ ♥</strong></div>
       <div class="pill">WARP CELLS <strong id="cells">0</strong></div>
+      <div class="pill">SCORE <strong id="score">0</strong></div>
+      <div class="pill">TIME <strong id="timer">00:00</strong></div>
     </div>
   </header>
   <div class="track"><div id="progress"></div></div>
@@ -101,13 +108,19 @@ footer a { color: #9ccef4; }
         <h2 id="overlayTitle">Lost far from home.</h2>
         <p id="overlayText">You are Nix, an alien pilot from the Veyra Galaxy. A damaged jump drive has stranded you in the Milky Way. Your map core says the only stable route home is to travel inward through this solar system, collect warp cells, and activate an ancient jump gate.</p>
         <p class="small-note" id="overlayNote">Move with WASD or arrow keys. Hold Space to boost. Reach the glowing gate to finish a level. Planet sizes use one shared scale; distances are compressed for gameplay.</p>
+        <label class="difficulty-label" for="difficulty">DIFFICULTY</label>
+        <select id="difficulty">
+          <option value="easy">Explorer — easier steering, 5 shields</option>
+          <option value="normal" selected>Standard — balanced, 3 shields</option>
+          <option value="hard">Expert — faster hazards feel, 2 shields</option>
+        </select>
         <button id="mainButton">Start the journey</button>
       </div>
     </div>
   </section>
   <div class="hint">
     <div><span class="keys">W A S D</span> / <span class="keys">↑ ↓ ← →</span> fly &nbsp; <span class="keys">SPACE</span> boost &nbsp; <span class="keys">R</span> retry level</div>
-    <div>Watch the gravity, dodge moons and rocks, and follow the cyan gate.</div>
+    <div><strong>Objective:</strong> reach the cyan gate. Collect warp cells for points; avoid planets, moons and rocks.</div>
   </div>
   <div class="info-row">
     <div class="info-card">
@@ -143,6 +156,9 @@ const H = canvas.height;
 const levelNumber = document.getElementById("levelNumber");
 const shieldsText = document.getElementById("shields");
 const cellsText = document.getElementById("cells");
+const scoreText = document.getElementById("score");
+const timerText = document.getElementById("timer");
+const difficultySelect = document.getElementById("difficulty");
 const progressBar = document.getElementById("progress");
 const missionTitle = document.getElementById("missionTitle");
 const missionText = document.getElementById("missionText");
@@ -297,6 +313,9 @@ let hitCooldown = 0;
 let invincible = 0;
 let cellCount = 0;
 let totalCells = 0;
+let score = 0;
+let elapsedTime = 0;
+let difficulty = "normal";
 let buttonAction = "start";
 let toastMessage = "";
 let toastTime = 0;
@@ -307,12 +326,28 @@ function getRadius(planet) {
   return diameter * 0.00042;
 }
 
+function formatTime(seconds) {
+  const whole = Math.floor(seconds);
+  return String(Math.floor(whole / 60)).padStart(2, "0") + ":" + String(whole % 60).padStart(2, "0");
+}
+
+function difficultySettings() {
+  if (difficulty === "easy") return { shields: 5, acceleration: 1.18, maxSpeed: 1.12, gravity: 0.82 };
+  if (difficulty === "hard") return { shields: 2, acceleration: 0.92, maxSpeed: 0.94, gravity: 1.18 };
+  return { shields: 3, acceleration: 1, maxSpeed: 1, gravity: 1 };
+}
+
+function updateScoreHud() {
+  scoreText.textContent = score.toLocaleString("en-US");
+  timerText.textContent = formatTime(elapsedTime);
+}
+
 function makeStage() {
   stage = levelData[levelIndex];
   const newPlanets = stage.planets.map(p => ({ ...p, r: getRadius(p) }));
   stage.playPlanets = newPlanets;
   ship = { x: 90, y: 265, vx: 0, vy: 0, r: 8, angle: 0, boost: false };
-  shields = 3;
+  shields = difficultySettings().shields;
   hitCooldown = 0;
   invincible = 0;
   cameraX = 0;
@@ -346,6 +381,7 @@ function makeStage() {
   missionText.textContent = stage.story;
   levelNumber.textContent = `${levelIndex + 1} / ${levelData.length}`;
   updateHud();
+  updateScoreHud();
   scanTitle.textContent = "No planet scanned";
   scanText.textContent = stage.effect;
   progressBar.style.width = "0%";
@@ -374,6 +410,7 @@ function startLevel() {
   const thisLoop = loopVersion;
   running = false;
   makeStage();
+  updateScoreHud();
   overlay.classList.add("hidden");
   running = true;
   lastTime = performance.now();
@@ -426,23 +463,34 @@ function finishLevel() {
   if (!running) return;
   if (levelIndex === levelData.length - 1) {
     totalCells += cellCount;
+    const finalBonus = 500 + shields * 50;
+    score += finalBonus;
     updateHud();
+    updateScoreHud();
     showOverlay("TRANSMISSION RECEIVED", "TO BE CONTINUED…",
-      "Nix reaches the Veyra Galaxy at last. The familiar star patterns return on the navigation screen, and a voice from home answers the ship. But something else is following the signal…",
-      "End of Chapter One. Thanks for playing Orbitbound.", "Play from the beginning", "replay");
+      `Nix reaches the Veyra Galaxy at last. The familiar star patterns return on the navigation screen, and a voice from home answers the ship. But something else is following the signal… Final bonus: ${finalBonus} points.`,
+      `MISSION REPORT · Score: ${score.toLocaleString("en-US")} · Warp cells: ${totalCells} · Time: ${formatTime(elapsedTime)} · Difficulty: ${difficulty.toUpperCase()}`,
+      "Play from the beginning", "replay");
     return;
   }
   totalCells += cellCount;
+  const levelBonus = 250 + shields * 50;
+  score += levelBonus;
   updateHud();
+  updateScoreHud();
   showOverlay(`LEVEL ${levelIndex + 1} COMPLETE`, stage.title + " cleared!",
-    `You made it through ${stage.route}. ${stage.story} Get ready for the next part of Nix's route home.`,
-    "Warp cells are bonus collectibles; you do not need every one to finish a level.", "Next level", "next");
+    `You made it through ${stage.route}. ${stage.story} Level bonus: ${levelBonus} points (including your remaining-shield bonus).`,
+    `Total score: ${score.toLocaleString("en-US")} · Warp cells collected: ${totalCells}.`,
+    "Next level", "next");
 }
 
 function handleButton() {
   if (buttonAction === "start") {
     levelIndex = 0;
     totalCells = 0;
+    score = 0;
+    elapsedTime = 0;
+    difficulty = difficultySelect.value;
     startLevel();
   } else if (buttonAction === "retry") {
     // The current level restarts with three shields.
@@ -452,6 +500,9 @@ function handleButton() {
   } else if (buttonAction === "replay") {
     levelIndex = 0;
     totalCells = 0;
+    score = 0;
+    elapsedTime = 0;
+    difficulty = difficultySelect.value;
     startLevel();
   }
 }
@@ -466,6 +517,8 @@ function planetFact(planet) {
 
 function update(dt) {
   time += dt;
+  elapsedTime += dt;
+  updateScoreHud();
   if (hitCooldown > 0) hitCooldown -= dt;
   if (invincible > 0) invincible -= dt;
   if (toastTime > 0) toastTime -= dt;
@@ -482,7 +535,8 @@ function update(dt) {
   ay /= directionLength;
 
   ship.boost = keys.has(" ");
-  let acceleration = ship.boost ? 350 : 210;
+  const settings = difficultySettings();
+  let acceleration = (ship.boost ? 350 : 210) * settings.acceleration;
   let activeEffect = stage.effect;
   let closestPlanet = null;
   let closestDistance = Infinity;
@@ -497,7 +551,7 @@ function update(dt) {
       closestPlanet = planet;
     }
     if (!planet.scenery && planet.gravity > 0 && distance < planet.r + 240) {
-      const strength = planet.gravity / (distance * distance + 4200);
+      const strength = (planet.gravity * settings.gravity) / (distance * distance + 4200);
       ship.vx += (dx / distance) * strength * dt;
       ship.vy += (dy / distance) * strength * dt;
     }
@@ -533,7 +587,7 @@ function update(dt) {
   ship.vy *= Math.pow(drag, dt * 60);
 
   const speed = Math.hypot(ship.vx, ship.vy);
-  const maxSpeed = ship.boost ? 300 : 215;
+  const maxSpeed = (ship.boost ? 300 : 215) * settings.maxSpeed;
   if (speed > maxSpeed) {
     ship.vx = ship.vx / speed * maxSpeed;
     ship.vy = ship.vy / speed * maxSpeed;
@@ -567,12 +621,43 @@ function update(dt) {
     if (!cell.got && Math.hypot(ship.x - cell.x, ship.y - cell.y) < 25) {
       cell.got = true;
       cellCount++;
+      score += 100;
       cellsText.textContent = String(totalCells + cellCount);
-      showToast("Warp cell collected!");
+      updateScoreHud();
+      showToast("Warp cell collected! +100 points");
     }
   }
 
-  if (closestPlanet && closestDistance < 260) {
+  let closestMoon = null;
+  let closestMoonDistance = Infinity;
+  for (const moon of moons) {
+    const d = Math.hypot(ship.x - moon.x, ship.y - moon.y);
+    if (d < closestMoonDistance) { closestMoonDistance = d; closestMoon = moon; }
+  }
+  if (closestMoon && closestMoonDistance < 115 && closestMoonDistance < closestDistance) {
+    const moonFacts = {
+      Moon: "Earth's Moon helps create ocean tides and keeps nearly the same face turned toward Earth.",
+      Titan: "Titan is Saturn's largest moon. It has lakes and seas made mostly of liquid methane and ethane.",
+      Europa: "Europa is covered by an icy crust. Scientists study whether a salty ocean exists beneath it.",
+      Ganymede: "Ganymede is the largest moon in the Solar System and has its own magnetic field.",
+      Callisto: "Callisto is heavily cratered and may have a subsurface ocean.",
+      Io: "Io is extremely volcanic because Jupiter's gravity constantly flexes its interior.",
+      Triton: "Triton orbits Neptune in the opposite direction to Neptune's rotation.",
+      Phobos: "Phobos is one of Mars's two small moons and is slowly moving closer to the planet.",
+      Deimos: "Deimos is the smaller and more distant of Mars's two moons.",
+      Rhea: "Rhea is Saturn's second-largest moon and is made mostly of ice and rock.",
+      Enceladus: "Enceladus sprays water-rich plumes into space from fractures near its south pole.",
+      Dione: "Dione is an icy moon of Saturn with bright wispy terrain.",
+      Mimas: "Mimas has a giant impact crater that gives it a distinctive appearance.",
+      Titania: "Titania is the largest moon of Uranus.",
+      Oberon: "Oberon is Uranus's outermost major moon and has a heavily cratered surface.",
+      Ariel: "Ariel is one of Uranus's brighter major moons, with valleys and fault systems.",
+      Umbriel: "Umbriel is a dark, heavily cratered moon of Uranus.",
+      Miranda: "Miranda is a small moon of Uranus with unusually varied surface terrain."
+    };
+    scanTitle.textContent = `${closestMoon.name} · moon of ${closestMoon.parent.name}`;
+    scanText.textContent = moonFacts[closestMoon.name] || "A natural satellite orbiting its parent planet.";
+  } else if (closestPlanet && closestDistance < 260) {
     const info = planetFact(closestPlanet);
     scanTitle.textContent = `${closestPlanet.name} · ${closestPlanet.diameter || planetInfo[closestPlanet.name].diameter || 1392700} km wide`;
     scanText.textContent = info.fact || info.text;
